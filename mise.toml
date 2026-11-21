@@ -1,0 +1,6 @@
+[tools]
+rust = "1.100.0"
+
+[env]
+RUSTUP_HOME = '{{ get_env(name="TAVOSH_TOOLCHAIN_DIR", default=config_root ~ "/target/toolchains") }}/rustup'
+CARGO_HOME = '{{ get_env(name="TAVOSH_TOOLCHAIN_DIR", default=config_root ~ "/target/toolchains") }}/cargo'
