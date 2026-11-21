@@ -10,6 +10,5 @@ mise exec -- cargo check --locked --workspace
 mise exec -- cargo test --locked --workspace
 ```
 
-Inside the hub, trust the parent config as well. The hub installs the
-Android toolchain for the private client. The core workspace builds on a
-host without Android, Node, Java or Expo when cloned independently.
+This checkout has a Rust-only toolchain. Rustup and Cargo state default to
+`target/toolchains/` under the checkout.
