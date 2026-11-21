@@ -1,19 +1,6 @@
-```text
-                              ##
-          #########        ####
-      #######################
-   #######    ###########
-  ####         ####
-  ##           ####
-               ####
-               ####      ###
-              ####     #####
-              ####    ###
-             ####     ###
-        #   ####       ######
-       ##############   ####
-        ###########
-```
+<img src="docs/assets/tavosh-core-icon.png" alt="Tavosh Core logo" width="160">
+
+[Download SVG](docs/assets/tavosh-core-icon.svg)
 
 # Tavosh Core
 
