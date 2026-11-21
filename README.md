@@ -19,10 +19,10 @@ types, and the optional host companion. The mobile client uses these components
 to interpret shell output and, eventually, to resume sessions across network
 changes. Standard SSH sessions work independently of the companion.
 
-**Development status:** The current milestone defines a smoke-test frame shared
-with the mobile client. The parser validates that frame, and the daemon reports
-its version. OSC 133 parsing, replay, and agent IPC are described in the design
-docs and are still in development.
+**Development status.** M1 adds the [v1 trace format](docs/protocol.md#terminal-replay-trace-v1)
+and [reproducible VT100, btop and nvim fixtures](fixtures/README.md) for native
+terminal regression tests and the mobile replay harness. Core Rust checks pass.
+The integrated Android build and device benchmarks are pending.
 
 ## Getting started
 
@@ -43,10 +43,11 @@ mise exec -- cargo test --locked --workspace
 | [`crates/tavosh-proto`](crates/tavosh-proto) | Shared protocol types and framing |
 | [`crates/tavosh-parser`](crates/tavosh-parser) | Terminal output boundaries and structured output detection |
 | [`crates/tavosh-daemon`](crates/tavosh-daemon) | Optional Rust host companion for replay and agent IPC |
-| [`fixtures/`](fixtures) | Sanitized terminal byte streams for parser regression coverage |
+| [`fixtures/`](fixtures) | Sanitized samples and deterministic terminal replay fixtures |
 
 ## Documentation
 
+- [Architecture](docs/architecture.md) and [roadmap](docs/roadmap.md) cover the public boundary and milestone status.
 - [Protocol design](docs/protocol.md) covers versioning, message framing, and replay offsets.
 - [Parser design](docs/parser.md) covers OSC 133 boundaries, timing fallback, and output detection.
 - [Daemon design](docs/daemon.md) covers session replay and agent IPC.
