@@ -15,3 +15,14 @@ The companion and app use the same Rust serde schema definitions and parser
 crate. Version agent IPC messages alongside replay frames and assign request
 IDs so replies and approval decisions correlate across reconnections.
 Keep PTY payload bytes opaque in framing and separate from structured IPC.
+
+## Terminal replay trace v1
+
+A trace starts with the eight bytes `TAVOTRC\x01`. Each record contains a
+little-endian unsigned 32-bit delay in milliseconds, a little-endian unsigned
+32-bit payload length, and that many original terminal bytes. Delays are relative
+to the preceding record or to playback start for the first record. Zero delay
+and empty payloads are valid. Individual payloads are limited to 1 MiB. EOF is
+valid only at a record boundary. Readers reject unsupported magic and versions,
+oversized records, and incomplete headers or payloads. This format is for
+fixtures and replay and does not change the daemon protocol.
