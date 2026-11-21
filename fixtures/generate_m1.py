@@ -54,6 +54,6 @@ editor = [
      at(1, 38, ESC + "36mREADME.md" + ESC + "0m") +
      at(15, 1, ESC + "7m NORMAL  src/main.rs " + ESC + "0m")),
     (120, at(2, 5, "") + ESC + "6 q"),
-    (500, ESC + "?2004l" + ESC + "?1006l" + ESC + "?1002l" + ESC + "?1049l"),
+    (8000, ESC + "?2004l" + ESC + "?1006l" + ESC + "?1002l" + ESC + "?1049l"),
 ]
 write("nvim_session", editor)
