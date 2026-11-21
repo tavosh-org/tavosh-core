@@ -1,26 +1,58 @@
-<img src="docs/assets/tavosh-core-icon.png" alt="Tavosh Core logo" width="160">
+<h1 align="center">
+  <img src="docs/assets/tavosh-core-icon.png" width="88" alt=""><br>
+  Tavosh Core
+</h1>
 
-[Download SVG](docs/assets/tavosh-core-icon.svg)
+<p align="center">Shared Rust components for the Tavosh SSH terminal and remote coding-agent cockpit.</p>
 
-# Tavosh Core
+<p align="center">
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#workspace">Workspace</a> ·
+  <a href="#documentation">Documentation</a> ·
+  <a href="#license">License</a>
+</p>
 
-Tavosh (Tavo) is a GPU-accelerated, mobile-first SSH terminal and remote AI
-agent cockpit for developers using remote machines and long-lived CLI agents.
-This public Rust repository provides the shared contracts for its real
-terminal, touch-first command feed and optional stateful roaming. Personal
-daily utility is the v0 bar. The core is dual-licensed under [MIT](LICENSE)
-OR [Apache-2.0](LICENSE-APACHE).
+## About
 
-- `crates/tavosh-proto` defines shared state and framing contracts.
-- `crates/tavosh-parser` owns stream slicing and structured output detection.
-- `crates/tavosh-daemon` reserves the host companion entry point.
-- `fixtures` contains sanitized terminal bytes for parser replay.
+Tavosh Core is the public workspace for terminal stream parsing, shared protocol
+types, and the optional host companion. The mobile client uses these components
+to interpret shell output and, eventually, to resume sessions across network
+changes. Standard SSH sessions work independently of the companion.
 
-Run `mise trust`, `mise install` and
-`mise exec -- cargo test --locked --workspace`. See [setup](docs/setup.md)
-and the [protocol](docs/protocol.md), [parser](docs/parser.md) and
-[daemon](docs/daemon.md) designs.
+**Development status:** The current milestone defines a smoke-test frame shared
+with the mobile client. The parser validates that frame, and the daemon reports
+its version. OSC 133 parsing, replay, and agent IPC are described in the design
+docs and are still in development.
 
-**M0 status.** Host checks pass. The parser validates the shared smoke grid,
-and the daemon prints its version. The wire protocol and terminal parsers
-are designs for later milestones.
+## Getting started
+
+From the repository root, use [mise](docs/setup.md) to install the pinned Rust
+toolchain and check the workspace:
+
+```sh
+mise trust ./mise.toml
+mise install
+mise exec -- cargo check --locked --workspace
+mise exec -- cargo test --locked --workspace
+```
+
+## Workspace
+
+| Path | Responsibility |
+| --- | --- |
+| [`crates/tavosh-proto`](crates/tavosh-proto) | Shared protocol types and framing |
+| [`crates/tavosh-parser`](crates/tavosh-parser) | Terminal output boundaries and structured output detection |
+| [`crates/tavosh-daemon`](crates/tavosh-daemon) | Optional Rust host companion for replay and agent IPC |
+| [`fixtures/`](fixtures) | Sanitized terminal byte streams for parser regression coverage |
+
+## Documentation
+
+- [Protocol design](docs/protocol.md) covers versioning, message framing, and replay offsets.
+- [Parser design](docs/parser.md) covers OSC 133 boundaries, timing fallback, and output detection.
+- [Daemon design](docs/daemon.md) covers session replay and agent IPC.
+- [Development setup](docs/setup.md) and [repository guidelines](AGENTS.md) cover local checks and contribution workflow.
+
+## License
+
+Tavosh Core is available under either the [MIT License](LICENSE) or the
+[Apache License, Version 2.0](LICENSE-APACHE), at your option.
