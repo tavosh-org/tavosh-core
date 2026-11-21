@@ -12,3 +12,10 @@ under a controlled clock in fixture tests. The adapter must surface
 heuristic card boundaries. Detect alternate-screen transitions independently
 of card segmentation. Only sniff JSON, TOML and unified diffs on completed,
 size-bounded output. Keep the raw display record available on parse failure.
+
+Treat the result of the boundary pass as immutable when complete. Downstream
+code can use the exit status for badges and actions. Structured sniffers
+accept only valid JSON, TOML or unified Git diffs and return typed values
+for the client's search, expansion and copy controls. Trace replays should
+assert known and unknown exit status, markers split across reads, fallback
+timing, alternate-screen transitions and malformed structured payloads.

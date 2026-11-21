@@ -10,3 +10,8 @@ Encode structured metadata with serde once fields and compatibility rules
 are established. Preserve data frames byte-for-byte; offsets make replay gaps
 and duplicate deliveries detectable. A client resumes from its acknowledged
 offset. Report expired ranges explicitly.
+
+The companion and app use the same Rust serde schema definitions and parser
+crate. Version agent IPC messages alongside replay frames and assign request
+IDs so replies and approval decisions correlate across reconnections.
+Keep PTY payload bytes opaque in framing and separate from structured IPC.

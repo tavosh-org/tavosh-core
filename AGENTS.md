@@ -1,24 +1,39 @@
 # Public Tavosh core
 
-Tavosh is a touch-first SSH terminal and CLI coding-agent cockpit. This
-repository owns the public, platform-independent Rust layer under MIT OR
-Apache-2.0. Keep mobile UI, client SSH policy, signing, and credentials in
-the proprietary app repository. Dependencies flow from app to core.
+Tavosh (Tavo) is a GPU-accelerated, mobile-first SSH terminal and remote AI
+agent cockpit. Preserve the power of a real terminal and support touch-first
+workflows. Personal daily utility for developers with remote machines and
+long-lived CLI agents is the v0 bar.
 
-- `tavosh-proto` owns schemas, framing and state types. Document versioning and
-  compatibility before adding serde wire formats.
-- `tavosh-parser` owns deterministic stream slicing, quiescence fallback and
-  structured content detection. Inject time in tests. Cover arbitrary read
-  boundaries, input-size limits and malformed frames with sanitized fixtures.
-  Preserve byte order and keep raw PTY bytes on the native side.
-- `tavosh-daemon` owns optional host replay. Keep its binary static where
-  supported. Specify authentication, bounded replay and backpressure.
-  Standard Mosh SSP is outside v0.
+## Repository boundary
 
-M0 defines the smoke grid and the crate boundaries. Update the tracked protocol,
-parser and daemon specs and byte fixtures when their contracts change. Pin
-the Rust toolchain in `mise.toml`, justify additions to dependencies, and
-commit `Cargo.lock` changes. Run `cargo fmt --all -- --check` before committing.
+This public, platform-independent Rust workspace is MIT OR Apache-2.0.
+Dependencies flow from the proprietary app to core. Keep mobile UI, client
+SSH policy, signing and credentials in the app.
+
+- `tavosh-proto` owns shared serde schemas, framing and state types. Document
+  versioning and compatibility before introducing wire changes.
+- `tavosh-parser` owns OSC 133 slicing, quiescence fallback and structured data
+  detection. Preserve byte order and keep raw PTY bytes on the native side.
+- `tavosh-daemon` owns optional authenticated replay and agent IPC. Target one
+  static Rust binary per supported host architecture and reuse core schemas
+  and parsers. Standard SSH and tmux must work without the daemon.
+- `fixtures/` holds sanitized terminal captures and synthetic regression traces.
+
+v0 excludes Mosh SSP, arbitrary agent TUI scraping and exhaustive SSH or agent
+coverage. The public core supplies the contracts for the app's command feed,
+TUI viewport, structured output, agent cockpit, roaming and host companion.
+
+## Engineering and documentation
+
+Pin Rust in `mise.toml`, justify dependency additions, and check in Cargo.lock
+updates. Run `cargo fmt --all -- --check` before committing. Use automated VT100
+conformance cases, recorded trace replay, and controlled-clock tests for
+arbitrary read boundaries, malformed frames and quiescence. Preserve the
+smoke grid as the M0 contract until versioned replacements exist.
+
+Update `docs/` and `README.md` whenever architecture, dependencies, or milestone
+status changes. Update fixtures when terminal or protocol behavior changes.
 
 ## Git Workflow
 
