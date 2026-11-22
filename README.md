@@ -15,14 +15,14 @@
 ## About
 
 Tavosh Core is the public workspace for terminal stream parsing, shared protocol
-types, and the optional host companion. The mobile client uses these components
-to interpret shell output and, eventually, to resume sessions across network
-changes. Standard SSH sessions work independently of the companion.
+types, and the optional host companion. The mobile client uses the shared
+connection schema to report verification, authentication and roaming state.
+Standard SSH sessions work independently of the companion.
 
-**Development status.** M1 adds the [v1 trace format](docs/protocol.md#terminal-replay-trace-v1)
-and [reproducible VT100, btop and nvim fixtures](fixtures/README.md) for native
-terminal regression tests and the mobile replay harness. Core Rust checks pass.
-The integrated Android build and device benchmarks are pending.
+**Development status.** The M2 core work adds the versioned
+[SSH connection schema](docs/protocol.md#ssh-connection-schemas). The M1
+[VT100, btop and nvim fixtures](fixtures/README.md) still drive offline replay
+and native terminal regression tests. Core check, tests and Clippy pass.
 
 ## Getting started
 

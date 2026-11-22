@@ -18,3 +18,12 @@ those bytes stay in the native worker.
 
 See [parser design](parser.md), [daemon design](daemon.md) and the
 [roadmap](roadmap.md) for the remaining public components.
+
+## M2 connection schema
+
+`tavosh-proto::connection::v1` defines SSH session configuration, connection
+states, disconnect reasons, and host-key fingerprints and decisions. Credential
+fields reference app-managed entries. The schema carries no private key bytes.
+The app selects the backend, owns the trust store, and drives its SSH transport
+and tmux attachment. The future daemon can reuse the shared schema where
+appropriate. See the [schema contract](protocol.md#ssh-connection-schemas).
