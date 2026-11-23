@@ -136,6 +136,62 @@ fn tree(
     node
 }
 
+fn toml_tree(
+    value: &toml::Value,
+    label: String,
+    path: String,
+    depth: usize,
+    budget: &mut usize,
+) -> TreeNode {
+    *budget -= 1;
+    let (kind, scalar, length) = match value {
+        toml::Value::Table(v) => (TreeKind::Object, None, v.len()),
+        toml::Value::Array(v) => (TreeKind::Array, None, v.len()),
+        toml::Value::String(v) => (TreeKind::String, Some(v.clone()), v.len()),
+        toml::Value::Integer(v) => (TreeKind::Number, Some(v.to_string()), 0),
+        toml::Value::Float(v) => (
+            TreeKind::Number,
+            Some(if v.is_nan() {
+                "nan".into()
+            } else {
+                v.to_string()
+            }),
+            0,
+        ),
+        toml::Value::Boolean(v) => (TreeKind::Boolean, Some(v.to_string()), 0),
+        toml::Value::Datetime(v) => (TreeKind::String, Some(v.to_string()), 0),
+    };
+    let truncated = scalar.as_ref().is_some_and(|s| s.len() > MAX_VALUE);
+    let mut node = TreeNode {
+        label: bounded(&label),
+        path,
+        kind,
+        value: scalar.as_deref().map(bounded),
+        length,
+        children: vec![],
+        truncated,
+    };
+    let items: Box<dyn Iterator<Item = (String, &toml::Value)> + '_> = match value {
+        toml::Value::Table(v) => Box::new(v.iter().map(|(k, v)| (k.clone(), v))),
+        toml::Value::Array(v) => Box::new(v.iter().enumerate().map(|(k, v)| (k.to_string(), v))),
+        _ => Box::new(std::iter::empty()),
+    };
+    for (key, child) in items {
+        let path = format!(
+            "{}/{}",
+            node.path,
+            key.replace('~', "~0").replace('/', "~1")
+        );
+        if *budget == 0 || depth >= MAX_DEPTH || path.len() > 2048 {
+            node.truncated = true;
+            break;
+        }
+        node.children
+            .push(toml_tree(child, key, path, depth + 1, budget));
+    }
+    node
+}
+
 pub fn classify(bytes: &[u8], total_bytes: u64) -> StructuredOutput {
     let output = classify_inner(bytes, total_bytes);
     // Bound the presentation document as well as its input. Huge diffs or
@@ -167,10 +223,8 @@ fn classify_inner(bytes: &[u8], total_bytes: u64) -> StructuredOutput {
     if let Some(files) = diff(clean.trim_matches('\n')) {
         return StructuredOutput::UnifiedDiff(files);
     }
-    if let Ok(value) = toml::from_str::<toml::Value>(text)
-        && let Ok(value) = serde_json::to_value(value)
-    {
-        return StructuredOutput::TomlTree(tree(
+    if let Ok(value) = toml::from_str::<toml::Value>(text) {
+        return StructuredOutput::TomlTree(toml_tree(
             &value,
             "$".into(),
             "".into(),
@@ -360,5 +414,23 @@ mod whitespace_tests {
             classify(text, text.len() as u64),
             StructuredOutput::UnifiedDiff(_)
         ));
+    }
+}
+
+#[cfg(test)]
+mod toml_tests {
+    use super::*;
+    #[test]
+    fn nonfinite_toml_numbers_and_dates_keep_their_values() {
+        let text = b"n = nan\ni = inf\nt = 1979-05-27T07:32:00Z\n";
+        let StructuredOutput::TomlTree(tree) = classify(text, text.len() as u64) else {
+            panic!("toml");
+        };
+        let n = tree.children.iter().find(|n| n.label == "n").unwrap();
+        assert_eq!(n.kind, TreeKind::Number);
+        assert_eq!(n.value.as_deref(), Some("nan"));
+        let t = tree.children.iter().find(|n| n.label == "t").unwrap();
+        assert_eq!(t.kind, TreeKind::String);
+        assert_eq!(t.value.as_deref(), Some("1979-05-27T07:32:00Z"));
     }
 }
