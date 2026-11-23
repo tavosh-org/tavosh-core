@@ -101,6 +101,16 @@ fn tree(
 }
 
 pub fn classify(bytes: &[u8], total_bytes: u64) -> StructuredOutput {
+    let output = classify_inner(bytes, total_bytes);
+    // Bound the presentation document as well as its input. Huge diffs or
+    // adversarially long object paths retain their plain-text preview.
+    if serde_json::to_vec(&output).map_or(true, |bytes| bytes.len() > 256 * 1024) {
+        StructuredOutput::PlainText
+    } else {
+        output
+    }
+}
+fn classify_inner(bytes: &[u8], total_bytes: u64) -> StructuredOutput {
     if total_bytes > MAX_OUTPUT as u64 || bytes.len() > MAX_OUTPUT {
         return StructuredOutput::PlainText;
     }

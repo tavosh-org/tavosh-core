@@ -114,6 +114,20 @@ pub struct FeedSnapshot {
     pub viewport: ViewportMode,
     pub status: Option<ProgramStatusEvent>,
 }
+/// Coalesced incremental presentation update. `block_ids` is the authoritative
+/// retained order; `blocks` contains new/changed blocks only. On `reset`, discard
+/// all cached blocks first. A consumer must apply every polled delta in order.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FeedDelta {
+    pub schema_version: u16,
+    pub generation: u64,
+    pub reset: bool,
+    pub block_ids: Vec<u64>,
+    pub blocks: Vec<CommandBlock>,
+    pub viewport: ViewportMode,
+    pub status: Option<ProgramStatusEvent>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

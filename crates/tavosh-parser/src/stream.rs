@@ -7,6 +7,7 @@ pub const MAX_OUTPUT: usize = 1024 * 1024;
 pub const MAX_PREVIEW: usize = 16 * 1024;
 pub const MAX_BLOCKS: usize = 32;
 const MAX_CONTROL: usize = 4096;
+const MAX_RETAINED: usize = 2 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -30,6 +31,7 @@ enum Escape {
     Osc(Vec<u8>, bool),
     DiscardOsc(bool),
     DiscardCsi,
+    String(bool),
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -52,7 +54,7 @@ pub struct StreamParser {
     next_id: u64,
     tui_started: Option<u64>,
     tui_duration: Option<u64>,
-    line_tail: Vec<u8>,
+    line_open: bool,
 }
 impl Default for StreamParser {
     fn default() -> Self {
@@ -83,11 +85,17 @@ impl StreamParser {
             next_id: 1,
             tui_started: None,
             tui_duration: None,
-            line_tail: vec![],
+            line_open: false,
         }
     }
     pub fn is_osc133(&self) -> bool {
         self.osc133
+    }
+    pub fn blocks(&self) -> impl Iterator<Item = &CommandBlock> {
+        self.snapshot.blocks.iter().chain(self.active.iter())
+    }
+    pub fn status(&self) -> Option<&ProgramStatusEvent> {
+        self.snapshot.status.as_ref()
     }
     pub fn snapshot(&self) -> FeedSnapshot {
         let mut snapshot = self.snapshot.clone();
@@ -96,6 +104,9 @@ impl StreamParser {
         }
         snapshot
     }
+    pub fn viewport(&self) -> ViewportMode {
+        self.snapshot.viewport
+    }
     pub fn generation(&self) -> u64 {
         self.snapshot.generation
     }
@@ -103,7 +114,11 @@ impl StreamParser {
         self.events.drain(..)
     }
     fn event(&mut self, event: BlockEvent) {
-        if self.events.len() == 64 {
+        let weight = event_weight(&event);
+        while !self.events.is_empty()
+            && (self.events.len() >= 64
+                || self.events.iter().map(event_weight).sum::<usize>() + weight > MAX_RETAINED)
+        {
             self.events.pop_front();
         }
         self.events.push_back(event);
@@ -113,6 +128,7 @@ impl StreamParser {
     /// OSC 133 input echo remains authoritative when hooks are available.
     pub fn submitted(&mut self, command: &str, now: u64) {
         if !self.osc133 && self.active.is_none() {
+            self.last_ms = now;
             self.start(command.trim().to_owned(), now);
             self.phase = Phase::Output;
         }
@@ -122,6 +138,7 @@ impl StreamParser {
             self.complete(None, now);
         }
         self.output.clear();
+        self.line_open = false;
         self.tui_duration = None;
         let block = CommandBlock {
             schema_version: FEED_SCHEMA_VERSION,
@@ -161,7 +178,9 @@ impl StreamParser {
                     .config
                     .prompt_suffixes
                     .iter()
-                    .filter_map(|suffix| first.find(suffix).map(|offset| (offset, suffix)))
+                    .filter_map(|suffix| {
+                        prompt_offset(first, suffix).map(|offset| (offset, suffix))
+                    })
                     .min_by_key(|(offset, _)| *offset)
             {
                 if let Some(block) = &mut self.active
@@ -171,7 +190,25 @@ impl StreamParser {
                 }
                 lines.remove(0);
             }
+            if let Some(first) = lines.first()
+                && self
+                    .active
+                    .as_ref()
+                    .is_some_and(|b| !b.command.is_empty() && first.trim() == b.command)
+            {
+                lines.remove(0);
+            }
+            let retained_all = self
+                .active
+                .as_ref()
+                .is_some_and(|b| b.total_bytes <= MAX_OUTPUT as u64);
             self.output = lines.concat().into_bytes();
+            if retained_all && let Some(block) = &mut self.active {
+                block.total_bytes = self.output.len() as u64;
+                block.total_lines = self.output.iter().filter(|&&b| b == b'\n').count() as u64
+                    + u64::from(!self.output.is_empty() && !self.output.ends_with(b"\n"));
+                block.truncated = block.total_bytes > MAX_PREVIEW as u64;
+            }
             self.refresh_preview();
             if self.tui_duration.is_none()
                 && self.output.is_empty()
@@ -191,7 +228,12 @@ impl StreamParser {
                 classify(&self.output, block.total_bytes)
             };
             self.event(BlockEvent::Completed(block.clone()));
-            if self.snapshot.blocks.len() >= MAX_BLOCKS - 1 {
+            let weight = block_weight(&block);
+            while !self.snapshot.blocks.is_empty()
+                && (self.snapshot.blocks.len() >= MAX_BLOCKS - 1
+                    || self.snapshot.blocks.iter().map(block_weight).sum::<usize>() + weight
+                        > MAX_RETAINED)
+            {
                 self.snapshot.blocks.remove(0);
             }
             self.snapshot.blocks.push(block);
@@ -233,6 +275,7 @@ impl StreamParser {
             Escape::Esc => match byte {
                 b']' => Escape::Osc(vec![], false),
                 b'[' => Escape::Csi(vec![]),
+                b'P' | b'_' | b'^' | b'X' => Escape::String(false),
                 0x1b => Escape::Esc,
                 _ => Escape::Ground,
             },
@@ -270,6 +313,13 @@ impl StreamParser {
                     Escape::DiscardOsc(byte == 0x1b)
                 }
             }
+            Escape::String(esc) => {
+                if esc && byte == b'\\' {
+                    Escape::Ground
+                } else {
+                    Escape::String(byte == 0x1b)
+                }
+            }
             Escape::DiscardCsi => {
                 if (0x40..=0x7e).contains(&byte) {
                     Escape::Ground
@@ -280,6 +330,9 @@ impl StreamParser {
         };
     }
     fn text(&mut self, byte: u8, now: u64) {
+        if byte < 32 && !matches!(byte, b'\n' | b'\r' | b'\t') {
+            return;
+        }
         if self.snapshot.viewport == ViewportMode::TuiCanvas {
             return;
         }
@@ -292,25 +345,19 @@ impl StreamParser {
         if self.osc133 && self.phase != Phase::Output {
             return;
         }
-        if !self.osc133 {
-            if byte == b'\n' {
-                self.line_tail.clear();
-            } else if self.line_tail.len() < MAX_CONTROL {
-                self.line_tail.push(byte);
+        if !self.osc133 && self.phase == Phase::Prompt {
+            if byte == b'\r' || byte == b'\n' {
+                return;
             }
-            if self.phase == Phase::Prompt {
-                if byte == b'\r' || byte == b'\n' {
-                    return;
-                }
-                self.start(String::new(), now);
-                self.phase = Phase::Output;
-            }
+            self.start(String::new(), now);
+            self.phase = Phase::Output;
         }
         if let Some(block) = &mut self.active {
             block.total_bytes += 1;
-            if byte == b'\n' {
+            if !self.line_open {
                 block.total_lines += 1;
             }
+            self.line_open = byte != b'\n';
             if self.output.len() < MAX_OUTPUT {
                 self.output.push(byte);
             }
@@ -325,7 +372,13 @@ impl StreamParser {
         };
         if let Some(marker) = text.strip_prefix("133;") {
             let (marker, exit) = match marker.split_once(';') {
-                Some((m, e)) => (m, e.parse().ok()),
+                Some((m, e)) if m == "D" => {
+                    let Ok(code) = e.parse() else {
+                        return;
+                    };
+                    (m, Some(code))
+                }
+                Some(_) => return,
                 None => (marker, None),
             };
             if !matches!(marker, "A" | "B" | "C" | "D") {
@@ -383,6 +436,7 @@ impl StreamParser {
                 self.start(String::new(), now);
             }
             self.tui_started = Some(now);
+            self.line_open = false;
             self.output.clear();
             if let Some(block) = &mut self.active {
                 block.preview.clear();
@@ -391,6 +445,9 @@ impl StreamParser {
             }
         } else {
             self.tui_duration = self.tui_started.take().map(|t| now.saturating_sub(t));
+            if let (Some(block), Some(duration_ms)) = (&mut self.active, self.tui_duration) {
+                block.output = StructuredOutput::TuiSummary { duration_ms };
+            }
             // In OSC mode D supplies the authoritative exit status later.
             if !self.osc133 {
                 self.complete(None, now);
@@ -404,15 +461,72 @@ impl StreamParser {
         if let Some(block) = &mut self.active {
             let end = self.output.len().min(MAX_PREVIEW);
             block.preview = String::from_utf8_lossy(&self.output[..end]).into_owned();
+            if block.preview.len() > MAX_PREVIEW {
+                let mut end = MAX_PREVIEW;
+                while !block.preview.is_char_boundary(end) {
+                    end -= 1;
+                }
+                block.preview.truncate(end);
+                block.truncated = true;
+            }
         }
     }
     /// Feed with a preview refresh once per chunk, independent of byte count.
     pub fn push(&mut self, bytes: &[u8], now: u64) {
         self.feed(bytes, now);
-        self.refresh_preview();
     }
 }
 use crate::sniff::classify;
+
+fn prompt_offset(line: &str, suffix: &str) -> Option<usize> {
+    let offset = line.find(suffix)?;
+    (offset <= 256
+        && line[..offset]
+            .chars()
+            .all(|c| c.is_alphanumeric() || "~/:@._-[]() ".contains(c)))
+    .then_some(offset)
+}
+
+fn block_weight(block: &CommandBlock) -> usize {
+    fn tree(node: &TreeNode) -> usize {
+        128 + node.path.len()
+            + node.label.len()
+            + node.value.as_ref().map_or(0, String::len)
+            + node.children.iter().map(tree).sum::<usize>()
+    }
+    256 + block.command.len()
+        + block.preview.len()
+        + match &block.output {
+            StructuredOutput::JsonTree(node) | StructuredOutput::TomlTree(node) => tree(node),
+            StructuredOutput::UnifiedDiff(files) => files
+                .iter()
+                .map(|file| {
+                    128 + file.old_path.len()
+                        + file.new_path.len()
+                        + file
+                            .hunks
+                            .iter()
+                            .map(|hunk| {
+                                64 + hunk.header.len()
+                                    + hunk
+                                        .lines
+                                        .iter()
+                                        .map(|line| 32 + line.text.len())
+                                        .sum::<usize>()
+                            })
+                            .sum::<usize>()
+                })
+                .sum(),
+            _ => 0,
+        }
+}
+fn event_weight(event: &BlockEvent) -> usize {
+    match event {
+        BlockEvent::Started(b) | BlockEvent::OutputDelta(b) | BlockEvent::Completed(b) => {
+            block_weight(b)
+        }
+    }
+}
 
 pub fn parse_status(text: &str) -> Option<ProgramStatusEvent> {
     if text.len() > MAX_CONTROL {
@@ -435,8 +549,8 @@ pub fn parse_status(text: &str) -> Option<ProgramStatusEvent> {
     Some(ProgramStatusEvent {
         schema_version: FEED_SCHEMA_VERSION,
         state,
-        kind: values.get("kind").copied().unwrap_or("").into(),
-        app: values.get("app").copied().unwrap_or("").into(),
+        kind: (*values.get("kind")?).into(),
+        app: (*values.get("app")?).into(),
         message: values.get("message").map(|v| (*v).into()),
         title: values.get("title").map(|v| (*v).into()),
     })
@@ -505,5 +619,65 @@ mod tests {
         assert!(parser.is_osc133());
         assert!(parse_status("state=unknown").is_none());
         assert!(parse_status("state=done;state=error").is_none());
+    }
+}
+
+#[cfg(test)]
+mod bounds_tests {
+    use super::*;
+    #[test]
+    fn retention_utf8_and_line_counts_remain_bounded() {
+        let mut parser = StreamParser::default();
+        for index in 0..100 {
+            parser.push(b"\x1b]133;B\x07cat\x1b]133;C\x07", index * 2);
+            parser.push(&vec![0xff; MAX_PREVIEW], index * 2);
+            parser.push(b"\x1b]133;D;0\x07", index * 2 + 1);
+        }
+        let snapshot = parser.snapshot();
+        assert!(snapshot.blocks.len() <= MAX_BLOCKS);
+        assert!(
+            snapshot
+                .blocks
+                .iter()
+                .all(|b| b.preview.len() <= MAX_PREVIEW && b.total_lines == 1)
+        );
+        assert!(parser.events.iter().map(event_weight).sum::<usize>() <= MAX_RETAINED);
+        assert!(snapshot.blocks.iter().map(block_weight).sum::<usize>() <= MAX_RETAINED);
+    }
+    #[test]
+    fn known_command_echo_is_removed_before_sniffing() {
+        let mut parser = StreamParser::default();
+        parser.submitted("cat data.json", 0);
+        parser.push(b"cat data.json\r\n{\"ok\":true}\r\n$ ", 1);
+        parser.tick(100);
+        let block = parser.snapshot().blocks.remove(0);
+        assert!(matches!(block.output, StructuredOutput::JsonTree(_)));
+        assert_eq!(block.preview, "{\"ok\":true}\r\n");
+        assert_eq!(block.total_lines, 1);
+    }
+    #[test]
+    fn malformed_completion_does_not_promote() {
+        let mut parser = StreamParser::default();
+        parser.push(b"\x1b]133;D;wat\x07", 0);
+        assert!(!parser.is_osc133());
+        assert!(parse_status("state=done").is_none());
+    }
+}
+
+#[cfg(test)]
+mod ansi_tests {
+    use super::*;
+    #[test]
+    fn string_controls_do_not_leak_and_json_prompt_text_is_not_a_prompt() {
+        let mut parser = StreamParser::default();
+        parser.push(
+            b"\x1bPopaque\x1b\\\x1b_hidden\x1b\\{\"prompt\":\"$ \"}\n",
+            0,
+        );
+        parser.tick(100);
+        let block = parser.snapshot().blocks.remove(0);
+        assert_eq!(block.command, "");
+        assert_eq!(block.preview, "{\"prompt\":\"$ \"}\n");
+        assert!(matches!(block.output, StructuredOutput::JsonTree(_)));
     }
 }

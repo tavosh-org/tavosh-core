@@ -5,5 +5,5 @@ if [ -z "${TAVOSH_HOOKED-}" ]; then
   __tavo_preexec() { printf '\033]133;C\007'; }
   add-zsh-hook precmd __tavo_precmd
   add-zsh-hook preexec __tavo_preexec
-  PROMPT="${PROMPT}"'%{\e]133;B\a%}'
+  PROMPT="${PROMPT}"$'%{\e]133;B\a%}'
 fi
