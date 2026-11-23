@@ -4,4 +4,5 @@
 pub const SMOKE_GRID_WIDTH: usize = 7;
 pub const SMOKE_GRID_HEIGHT: usize = 5;
 
+pub mod connection;
 pub mod trace;

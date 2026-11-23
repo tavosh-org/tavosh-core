@@ -26,3 +26,12 @@ and empty payloads are valid. Individual payloads are limited to 1 MiB. EOF is
 valid only at a record boundary. Readers reject unsupported magic and versions,
 oversized records, and incomplete headers or payloads. This format is for
 fixtures and replay and does not change the daemon protocol.
+
+## SSH connection schemas
+
+`tavosh_proto::connection::v1` defines the version 1 session configuration,
+connection states, and host-key decisions. Consumers select the schema version
+out of band. Enum tags and field names use snake case. Optional configuration
+fields may be omitted. Breaking schema changes require a new version.
+Authentication configuration carries credential references only. These types
+do not introduce a daemon wire protocol.
