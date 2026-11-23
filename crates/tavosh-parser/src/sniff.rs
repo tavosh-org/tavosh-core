@@ -114,8 +114,8 @@ fn classify_inner(bytes: &[u8], total_bytes: u64) -> StructuredOutput {
     if total_bytes > MAX_OUTPUT as u64 || bytes.len() > MAX_OUTPUT {
         return StructuredOutput::PlainText;
     }
-    let text = strip_ansi(bytes);
-    let text = text.trim();
+    let clean = strip_ansi(bytes);
+    let text = clean.trim();
     if text.is_empty() {
         return StructuredOutput::PlainText;
     }
@@ -128,7 +128,7 @@ fn classify_inner(bytes: &[u8], total_bytes: u64) -> StructuredOutput {
             &mut MAX_NODES.clone(),
         ));
     }
-    if let Some(files) = diff(text) {
+    if let Some(files) = diff(clean.trim_matches('\n')) {
         return StructuredOutput::UnifiedDiff(files);
     }
     if let Ok(value) = toml::from_str::<toml::Value>(text)
@@ -311,5 +311,18 @@ mod tests {
         assert!(block.truncated);
         assert_eq!(block.total_bytes, (MAX_OUTPUT * 2) as u64);
         assert_eq!(block.preview.len(), crate::stream::MAX_PREVIEW);
+    }
+}
+
+#[cfg(test)]
+mod whitespace_tests {
+    use super::*;
+    #[test]
+    fn final_blank_context_line_keeps_its_diff_prefix() {
+        let text = b"--- a/a\n+++ b/a\n@@ -1,2 +1,2 @@\n-old\n+new\n \n";
+        assert!(matches!(
+            classify(text, text.len() as u64),
+            StructuredOutput::UnifiedDiff(_)
+        ));
     }
 }
