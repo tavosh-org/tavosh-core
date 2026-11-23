@@ -35,3 +35,17 @@ out of band. Enum tags and field names use snake case. Optional configuration
 fields may be omitted. Breaking schema changes require a new version.
 Authentication configuration carries credential references only. These types
 do not introduce a daemon wire protocol.
+
+## Adaptive feed schema v1
+
+`tavosh_proto::feed` is the versioned presentation contract. Every command and
+feed document carries `schema_version: 1`. Enum variants use their Rust names;
+`StructuredOutput` and `BlockEvent` use `{ "type": "Variant", "data": ... }`
+(`PlainText` has no data). Optional values serialize as JSON null. Monotonic
+session-relative times are milliseconds, not wall-clock timestamps. Additive
+optional fields are compatible; changing variant semantics needs a new schema
+version. `TreeNode.path` is an RFC 6901 pointer; an empty path means the root.
+See [parser design](parser.md) for OSC 133, OSC 7501 and validation limits.
+
+SSH configuration adds optional `shell_integration`. Missing means true;
+false disables hook installation for that host. Credentials remain references.

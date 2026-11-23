@@ -19,10 +19,12 @@ types, and the optional host companion. The mobile client uses the shared
 connection schema to report verification, authentication and roaming state.
 Standard SSH sessions work independently of the companion.
 
-**Development status.** The M2 core work adds the versioned
-[SSH connection schema](docs/protocol.md#ssh-connection-schemas). The M1
-[VT100, btop and nvim fixtures](fixtures/README.md) still drive offline replay
-and native terminal regression tests. Core check, tests and Clippy pass.
+**Development status.** M3 implements the native adaptive stream parser:
+OSC 133 boundaries, heuristic fallback, OSC 7501 status, JSON/TOML trees,
+validated unified diffs and Feed/TUI transitions. Bounded records and incremental
+feed schemas are shared with the app. [Parser rules](docs/parser.md) and
+[reproducible M3 fixtures](fixtures/README.md#m3-adaptive-traces) document the
+contract. The optional daemon remains independent of standard SSH.
 
 ## Getting started
 
