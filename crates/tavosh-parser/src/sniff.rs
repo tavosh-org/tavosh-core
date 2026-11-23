@@ -13,7 +13,7 @@ pub fn strip_ansi(bytes: &[u8]) -> String {
             0 => {
                 if b == 27 {
                     state = 1
-                } else if b == b'\n' || b == b'\t' || b >= 32 {
+                } else if matches!(b, b'\n' | b'\r' | b'\t' | 8) || b >= 32 {
                     out.push(b);
                 }
             }
@@ -39,7 +39,43 @@ pub fn strip_ansi(bytes: &[u8]) -> String {
             _ => state = if b == b'\\' { 0 } else { 3 },
         }
     }
-    String::from_utf8_lossy(&out).into_owned()
+    let text = String::from_utf8_lossy(&out);
+    let mut result = String::new();
+    let mut line = Vec::new();
+    let mut cursor: usize = 0;
+    let mut rewound = false;
+    let mut rewritten = false;
+    for c in text.chars() {
+        match c {
+            '\r' => {
+                cursor = 0;
+                rewound = true;
+            }
+            '\u{8}' => {
+                cursor = cursor.saturating_sub(1);
+            }
+            '\n' => {
+                result.extend(line.drain(..));
+                result.push('\n');
+                cursor = 0;
+                rewound = false;
+                rewritten = false;
+            }
+            c => {
+                rewritten |= rewound;
+                if cursor < line.len() {
+                    line[cursor] = c;
+                } else {
+                    line.push(c);
+                }
+                cursor += 1;
+            }
+        }
+    }
+    if !(rewritten && line.iter().all(|&c| c == ' ')) {
+        result.extend(line);
+    }
+    result
 }
 fn bounded(s: &str) -> String {
     let mut end = s.len().min(MAX_VALUE);

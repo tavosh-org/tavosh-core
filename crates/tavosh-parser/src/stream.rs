@@ -40,6 +40,90 @@ enum Phase {
     Output,
 }
 
+/// Small line editor for shell echo between B and C. Cursor operations apply
+/// before command capture, so readline/ZLE redraws cannot duplicate characters.
+#[derive(Default)]
+struct InputLine {
+    chars: Vec<char>,
+    cursor: usize,
+    utf8: Vec<u8>,
+}
+impl InputLine {
+    fn clear(&mut self) {
+        self.chars.clear();
+        self.cursor = 0;
+        self.utf8.clear();
+    }
+    fn command(&self) -> String {
+        self.chars.iter().collect::<String>().trim().to_owned()
+    }
+    fn put(&mut self, c: char) {
+        if self.cursor >= MAX_CONTROL {
+            return;
+        }
+        while self.chars.len() < self.cursor {
+            self.chars.push(' ');
+        }
+        if self.cursor < self.chars.len() {
+            self.chars[self.cursor] = c;
+        } else {
+            self.chars.push(c);
+        }
+        self.cursor += 1;
+    }
+    fn write(&mut self, byte: u8) {
+        match byte {
+            b'\r' => {
+                self.cursor = 0;
+                self.utf8.clear();
+            }
+            b'\n' => {}
+            8 | 127 => {
+                self.cursor = self.cursor.saturating_sub(1);
+                self.utf8.clear();
+            }
+            0..=31 => {}
+            _ => {
+                self.utf8.push(byte);
+                match std::str::from_utf8(&self.utf8) {
+                    Ok(text) => {
+                        let c = text.chars().next().unwrap();
+                        self.utf8.clear();
+                        self.put(c);
+                    }
+                    Err(error) if error.error_len().is_some() || self.utf8.len() >= 4 => {
+                        self.utf8.clear();
+                        self.put('�');
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    fn csi(&mut self, params: &[u8], end: u8) {
+        let n = std::str::from_utf8(params)
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(0)
+            .min(MAX_CONTROL);
+        match end {
+            b'C' => self.cursor = (self.cursor + n.max(1)).min(MAX_CONTROL),
+            b'D' => self.cursor = self.cursor.saturating_sub(n.max(1)),
+            b'K' if n == 0 => self.chars.truncate(self.cursor),
+            b'K' if n == 2 => {
+                self.chars.clear();
+                self.cursor = 0;
+            }
+            b'P' => {
+                let start = self.cursor.min(self.chars.len());
+                let end = (start + n.max(1)).min(self.chars.len());
+                self.chars.drain(start..end);
+            }
+            _ => {}
+        }
+    }
+}
+
 pub struct StreamParser {
     config: Config,
     escape: Escape,
@@ -49,7 +133,7 @@ pub struct StreamParser {
     events: VecDeque<BlockEvent>,
     active: Option<CommandBlock>,
     output: Vec<u8>,
-    input: Vec<u8>,
+    input: InputLine,
     last_ms: u64,
     next_id: u64,
     tui_started: Option<u64>,
@@ -80,7 +164,7 @@ impl StreamParser {
             events: VecDeque::new(),
             active: None,
             output: vec![],
-            input: vec![],
+            input: InputLine::default(),
             last_ms: 0,
             next_id: 1,
             tui_started: None,
@@ -330,16 +414,14 @@ impl StreamParser {
         };
     }
     fn text(&mut self, byte: u8, now: u64) {
-        if byte < 32 && !matches!(byte, b'\n' | b'\r' | b'\t') {
-            return;
-        }
         if self.snapshot.viewport == ViewportMode::TuiCanvas {
             return;
         }
         if self.osc133 && self.phase == Phase::Input {
-            if self.input.len() < MAX_CONTROL {
-                self.input.push(byte);
-            }
+            self.input.write(byte);
+            return;
+        }
+        if byte < 32 && !matches!(byte, b'\n' | b'\r' | b'\t') {
             return;
         }
         if self.osc133 && self.phase != Phase::Output {
@@ -399,7 +481,7 @@ impl StreamParser {
                     self.input.clear();
                 }
                 "C" => {
-                    self.start(String::from_utf8_lossy(&self.input).trim().to_owned(), now);
+                    self.start(self.input.command(), now);
                     self.phase = Phase::Output;
                 }
                 "D" => {
@@ -414,6 +496,9 @@ impl StreamParser {
         }
     }
     fn csi(&mut self, params: &[u8], final_byte: u8, now: u64) {
+        if self.osc133 && self.phase == Phase::Input {
+            self.input.csi(params, final_byte);
+        }
         if !matches!(final_byte, b'h' | b'l') || params.first() != Some(&b'?') {
             return;
         }
@@ -460,7 +545,7 @@ impl StreamParser {
     fn refresh_preview(&mut self) {
         if let Some(block) = &mut self.active {
             let end = self.output.len().min(MAX_PREVIEW);
-            block.preview = String::from_utf8_lossy(&self.output[..end]).into_owned();
+            block.preview = crate::sniff::strip_ansi(&self.output[..end]);
             if block.preview.len() > MAX_PREVIEW {
                 let mut end = MAX_PREVIEW;
                 while !block.preview.is_char_boundary(end) {
@@ -574,7 +659,7 @@ mod tests {
                 let block = &snapshot.blocks[0];
                 assert_eq!(block.command, "echo café");
                 assert_eq!(block.exit_code, Some(7));
-                assert_eq!(block.preview, "café\r\n");
+                assert_eq!(block.preview, "café\n");
                 assert_eq!(snapshot.status.unwrap().state, ProgramState::Done);
             }
         }
@@ -588,7 +673,7 @@ mod tests {
         parser.tick(75);
         let snapshot = parser.snapshot();
         assert_eq!(snapshot.blocks[0].command, "echo hello");
-        assert_eq!(snapshot.blocks[0].preview, "hello\r\n");
+        assert_eq!(snapshot.blocks[0].preview, "hello\n");
         parser.push(b"\x1b]133;A\x07", 100);
         assert!(parser.is_osc133());
         parser.push(b"\x1b]133;B\x07sleep 10\x1b]133;C\x07", 101);
@@ -652,7 +737,7 @@ mod bounds_tests {
         parser.tick(100);
         let block = parser.snapshot().blocks.remove(0);
         assert!(matches!(block.output, StructuredOutput::JsonTree(_)));
-        assert_eq!(block.preview, "{\"ok\":true}\r\n");
+        assert_eq!(block.preview, "{\"ok\":true}\n");
         assert_eq!(block.total_lines, 1);
     }
     #[test]
