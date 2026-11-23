@@ -3,6 +3,13 @@
 pub mod v1 {
     use serde::{Deserialize, Serialize};
 
+    fn enabled() -> bool {
+        true
+    }
+    fn is_enabled(value: &bool) -> bool {
+        *value
+    }
+
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct SshSessionConfig {
         pub host: String,
@@ -11,6 +18,8 @@ pub mod v1 {
         pub auth: SshAuth,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub tmux_session: Option<String>,
+        #[serde(default = "enabled", skip_serializing_if = "is_enabled")]
+        pub shell_integration: bool,
     }
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

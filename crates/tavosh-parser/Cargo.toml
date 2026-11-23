@@ -12,3 +12,6 @@ workspace = true
 
 [dependencies]
 tavosh-proto.workspace = true
+# Native validators keep all syntax work off the mobile JS thread.
+serde_json = "1"
+toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
