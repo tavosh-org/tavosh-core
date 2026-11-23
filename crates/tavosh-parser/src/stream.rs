@@ -147,31 +147,29 @@ impl StreamParser {
         if !self.osc133 {
             let text = String::from_utf8_lossy(&self.output).into_owned();
             let mut lines: Vec<&str> = text.split_inclusive('\n').collect();
-            if let Some(last) = lines.last() {
-                if self
+            if let Some(last) = lines.last()
+                && self
                     .config
                     .prompt_suffixes
                     .iter()
                     .any(|suffix| last.ends_with(suffix))
-                {
-                    lines.pop();
-                }
+            {
+                lines.pop();
             }
-            if let Some(first) = lines.first().copied() {
-                if let Some((offset, suffix)) = self
+            if let Some(first) = lines.first().copied()
+                && let Some((offset, suffix)) = self
                     .config
                     .prompt_suffixes
                     .iter()
                     .filter_map(|suffix| first.find(suffix).map(|offset| (offset, suffix)))
                     .min_by_key(|(offset, _)| *offset)
+            {
+                if let Some(block) = &mut self.active
+                    && block.command.is_empty()
                 {
-                    if let Some(block) = &mut self.active {
-                        if block.command.is_empty() {
-                            block.command = first[offset + suffix.len()..].trim().to_owned();
-                        }
-                    }
-                    lines.remove(0);
+                    block.command = first[offset + suffix.len()..].trim().to_owned();
                 }
+                lines.remove(0);
             }
             self.output = lines.concat().into_bytes();
             self.refresh_preview();
@@ -414,9 +412,7 @@ impl StreamParser {
         self.refresh_preview();
     }
 }
-fn classify(_bytes: &[u8], _total: u64) -> StructuredOutput {
-    StructuredOutput::PlainText
-}
+use crate::sniff::classify;
 
 pub fn parse_status(text: &str) -> Option<ProgramStatusEvent> {
     if text.len() > MAX_CONTROL {

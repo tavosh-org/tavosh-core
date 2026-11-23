@@ -15,3 +15,5 @@ pub use stream::{Config, StreamParser};
 pub const BASH_HOOK: &str = include_str!("hooks/bash.sh");
 pub const ZSH_HOOK: &str = include_str!("hooks/zsh.sh");
 pub const FISH_HOOK: &str = include_str!("hooks/fish.fish");
+
+pub mod sniff;
